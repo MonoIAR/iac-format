@@ -5,126 +5,140 @@
       "file": "invalid/bad-color.iac",
       "expect": "error",
       "codes": [
-        "E021"
+        "E013"
       ]
     },
     {
       "file": "invalid/bad-escape.iac",
       "expect": "error",
       "codes": [
-        "E011"
+        "E003"
       ]
     },
     {
       "file": "invalid/bad-time-shape.iac",
       "expect": "error",
       "codes": [
-        "E016"
+        "E008"
       ]
     },
     {
       "file": "invalid/bad-type.iac",
       "expect": "error",
       "codes": [
-        "E023"
+        "E014"
       ]
     },
     {
       "file": "invalid/duplicate-audio-name.iac",
       "expect": "error",
       "codes": [
-        "E015"
+        "E007"
       ]
     },
     {
       "file": "invalid/empty-audio-name.iac",
       "expect": "error",
       "codes": [
-        "E013"
+        "E005"
       ]
     },
     {
       "file": "invalid/empty-set.iac",
       "expect": "error",
       "codes": [
-        "E020"
+        "E012"
+      ]
+    },
+    {
+      "file": "invalid/empty-subtitle-set-field.iac",
+      "expect": "error",
+      "codes": [
+        "E012"
       ]
     },
     {
       "file": "invalid/entry-order.iac",
       "expect": "error",
       "codes": [
-        "E019"
+        "E011"
       ]
     },
     {
       "file": "invalid/field-count.iac",
       "expect": "error",
       "codes": [
-        "E012"
+        "E004"
       ]
     },
     {
       "file": "invalid/forbidden-control.iac",
       "expect": "error",
       "codes": [
-        "E026"
+        "E017"
       ]
     },
     {
       "file": "invalid/illegal-audio-name.iac",
       "expect": "error",
       "codes": [
-        "E014"
+        "E006"
       ]
     },
     {
-      "file": "invalid/too-many-fields.iac",
+      "file": "invalid/nul-byte.iac",
       "expect": "error",
       "codes": [
-        "E012"
+        "E001"
       ]
     },
     {
       "file": "invalid/stop-not-after-start.iac",
       "expect": "error",
       "codes": [
-        "E018"
+        "E010"
+      ]
+    },
+    {
+      "file": "invalid/stray-close-bracket.iac",
+      "expect": "error",
+      "codes": [
+        "E006"
       ]
     },
     {
       "file": "invalid/time-range.iac",
       "expect": "error",
       "codes": [
-        "E017"
+        "E009"
+      ]
+    },
+    {
+      "file": "invalid/too-many-fields.iac",
+      "expect": "error",
+      "codes": [
+        "E004"
       ]
     },
     {
       "file": "invalid/trailing-content.iac",
       "expect": "error",
       "codes": [
-        "E027"
+        "E018"
       ]
     },
     {
       "file": "invalid/unsupported-major.iac",
       "expect": "error",
       "codes": [
-        "E024"
+        "E015"
       ]
     },
     {
       "file": "invalid/unterminated-quote.iac",
       "expect": "error",
       "codes": [
-        "E010"
-      ]
-    },
-    {
-      "file": "invalid/retired-broken.iac",
-      "expect": "warning",
-      "codes": [
-        "W008"
+        "E002"
       ]
     },
     {
@@ -181,12 +195,19 @@
       ]
     },
     {
-      "file": "valid/retired.iac",
+      "file": "valid/retired-broken.iac",
+      "expect": "warning",
+      "codes": [
+        "W008"
+      ]
+    },
+    {
+      "file": "valid/retired-duplicate.iac",
       "expect": "ok",
       "codes": []
     },
     {
-      "file": "valid/retired-duplicate.iac",
+      "file": "valid/retired.iac",
       "expect": "ok",
       "codes": []
     },
@@ -218,6 +239,13 @@
       "file": "valid/versioned.iac",
       "expect": "ok",
       "codes": []
+    },
+    {
+      "file": "valid/w004-whitespace.iac",
+      "expect": "warning",
+      "codes": [
+        "W004"
+      ]
     }
   ]
 }

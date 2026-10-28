@@ -9,13 +9,14 @@ The point of this file is to be small enough that another implementer can read
 it end to end and reproduce the behaviour. It is stdlib-only on purpose.
 
 CLI:
-    python tools/iac_lint.py validate <path>... [--json] [--strict]
-    python tools/iac_lint.py fmt <file> [--check] [--stdout]
+    python tools/iac_lint.py validate <path>... [--json]
+    python tools/iac_lint.py fmt <path>... [--check] [--stdout]
     python tools/iac_lint.py from-srt <input.srt> <output.iac> [--name NAME]
     python tools/iac_lint.py migrate <path>... [--check]
 
-`fmt` rewrites the file in place; `--check` reports without writing and is what
-CI should use; `--stdout` prints instead of writing.
+`validate` and `migrate` accept files or directories. `fmt` accepts files or
+directories too: it rewrites them in place, `--check` reports without writing,
+and `--stdout` prints a single file's canonical text instead of writing.
 
 Exit codes: 0 clean, 1 warnings only, 2 errors.
 """
@@ -29,14 +30,14 @@ import sys
 from dataclasses import dataclass, field
 from typing import Iterable, List, Optional, Tuple
 
-# --- Limits (D12) -----------------------------------------------------------
+# --- Limits (spec §9) -------------------------------------------------------
 
 MAX_FILE_BYTES = 8 * 1024 * 1024
 MAX_LINE_CHARS = 64 * 1024
 MAX_RECORDS = 10_000
-MAX_ENTRIES = 4_096
 MAX_TEXT_CHARS = 4_096
 MAX_NAME_CHARS = 256
+MAX_CS = 99 * 360000 + 59 * 6000 + 59 * 100 + 99  # 99:59:59:99
 
 SUPPORTED_MAJOR = 1
 SUPPORTED_MINOR = 0
@@ -77,8 +78,8 @@ SEVERITY = {}
 
 def _register_severities() -> None:
     for code in (
-        "E001 E010 E011 E012 E013 E014 E015 E016 E017 E018 E019 E020 "
-        "E021 E023 E024 E025 E026 E027"
+        "E001 E002 E003 E004 E005 E006 E007 E008 E009 E010 E011 E012 "
+        "E013 E014 E015 E016 E017 E018"
     ).split():
         SEVERITY[code] = "error"
     for code in "W001 W002 W003 W004 W005 W006 W007 W008".split():
@@ -120,7 +121,6 @@ class Entry:
     text: str
     start: int  # centiseconds
     stop: int  # centiseconds
-    line: int
 
     def render(self) -> str:
         return f'"{escape_text(self.text)}"|{fmt_time(self.start)}-{fmt_time(self.stop)}|'
@@ -132,11 +132,10 @@ class Record:
     entries: List[Entry]
     color: str
     type: str = DEFAULT_TYPE
-    line: int = 0
 
     def render(self) -> str:
         # Canonical form sorts cues by StartTime (D11); parsing keeps source
-        # order so that out-of-order input is still reported as E019.
+        # order so that out-of-order input is still reported as E011.
         ordered = sorted(self.entries, key=lambda e: e.start)
         body = ", ".join(e.render() for e in ordered)
         line = f"{self.name} : {{{body}}} : [#{self.color}]"
@@ -151,7 +150,6 @@ class Document:
     diagnostics: List[Diagnostic] = field(default_factory=list)
     # Preserved for `fmt`: ("comment"|"directive"|"record"|"blank", payload)
     blocks: List[Tuple[str, object]] = field(default_factory=list)
-    version: Optional[Tuple[int, int]] = None
 
     @property
     def errors(self) -> List[Diagnostic]:
@@ -173,10 +171,10 @@ def parse_time(raw: str) -> int:
     """Return centiseconds. Raises ValueError with a code-bearing message."""
     m = TIME_RE.match(raw)
     if not m:
-        raise ValueError("E016")
+        raise ValueError("E008")
     hh, mm, ss, cc = (int(g) for g in m.groups())
-    if mm > 59 or ss > 59 or hh > 99 or cc > 99:
-        raise ValueError("E017")
+    if mm > 59 or ss > 59:
+        raise ValueError("E009")
     return ((hh * 60 + mm) * 60 + ss) * 100 + cc
 
 
@@ -206,14 +204,14 @@ def check_text(text: str) -> Optional[str]:
         ch = text[i]
         if ch == "\\":
             if i + 1 >= n:
-                return "E011"
+                return "E003"
             nxt = text[i + 1]
             if nxt not in ('"', "\\"):
-                return "E011"
+                return "E003"
             i += 2
             continue
         if ch in FORBIDDEN_TEXT_CHARS:
-            return "E026"
+            return "E017"
         i += 1
     return None
 
@@ -244,8 +242,8 @@ def split_top_level(line: str, sep_char: str) -> Tuple[List[str], str]:
 
     Returns (parts, state) where state is one of:
         "ok"         the line was balanced and fully tokenized
-        "quote"      a quoted string was never closed   -> E010
-        "unbalanced" braces or brackets do not balance  -> E012
+        "quote"      a quoted string was never closed   -> E002
+        "unbalanced" braces or brackets do not balance  -> E004
     """
     parts: List[str] = []
     start = 0
@@ -271,13 +269,15 @@ def split_top_level(line: str, sep_char: str) -> Tuple[List[str], str]:
             in_quote = True
             i += 1
             continue
+        # A closer with no opener never makes depth negative (§3.5): it is a
+        # character in the current field, handled by the field rules.
         if ch == "{":
             brace += 1
-        elif ch == "}":
+        elif ch == "}" and brace > 0:
             brace -= 1
         elif ch == "[":
             bracket += 1
-        elif ch == "]":
+        elif ch == "]" and bracket > 0:
             bracket -= 1
         elif ch == sep_char and brace == 0 and bracket == 0:
             if sep_char == ":":
@@ -308,29 +308,32 @@ def split_top_level(line: str, sep_char: str) -> Tuple[List[str], str]:
 # --- Record parsing ---------------------------------------------------------
 
 
-def parse_entries(
-    raw: str, line_no: int, diags: List[Diagnostic], strict: bool = False
-) -> List[Entry]:
+def parse_entries(raw: str, line_no: int, diags: List[Diagnostic]) -> List[Entry]:
     body = raw.strip()
+    if not body:
+        # An empty field 2 is an empty set, not a structural error (§4.1).
+        diags.append(Diagnostic("E012", line_no, 1, "subtitle set is empty"))
+        return []
     if not (body.startswith("{") and body.endswith("}")):
-        diags.append(Diagnostic("E012", line_no, 1, "subtitle set must be wrapped in { }"))
+        diags.append(Diagnostic("E004", line_no, 1, "subtitle set must be wrapped in { }"))
         return []
-    inner = body[1:-1].strip()
+    inner_raw = body[1:-1]
+    inner = inner_raw.strip()
     if not inner:
-        diags.append(Diagnostic("E020", line_no, 1, "subtitle set is empty"))
+        diags.append(Diagnostic("E012", line_no, 1, "subtitle set is empty"))
         return []
+    if inner_raw != inner:
+        diags.append(
+            Diagnostic("W004", line_no, 1, "non-canonical whitespace inside the subtitle set")
+        )
 
     chunks, state = split_top_level(inner, ",")
     if state == "quote":
-        diags.append(Diagnostic("E010", line_no, 1, "unterminated quoted string"))
+        diags.append(Diagnostic("E002", line_no, 1, "unterminated quoted string"))
         return []
     if state == "unbalanced":
-        diags.append(Diagnostic("E012", line_no, 1, "unbalanced braces or brackets"))
+        diags.append(Diagnostic("E004", line_no, 1, "unbalanced braces or brackets"))
         return []
-    if len(chunks) > MAX_ENTRIES:
-        diags.append(Diagnostic("E025", line_no, 1, f"more than {MAX_ENTRIES} entries"))
-        return []
-
     canonical_inner = ", ".join(chunk.strip() for chunk in chunks)
     if inner != canonical_inner:
         diags.append(Diagnostic("W004", line_no, 1, "non-canonical spacing around an entry separator"))
@@ -339,20 +342,20 @@ def parse_entries(
     for chunk in chunks:
         item = chunk.strip()
         if not item:
-            diags.append(Diagnostic("E012", line_no, 1, "empty subtitle entry"))
+            diags.append(Diagnostic("E004", line_no, 1, "empty subtitle entry"))
             continue
         m = ENTRY_RE.match(item)
         if not m:
             if '"' in item and item.count('"') % 2 == 1:
-                diags.append(Diagnostic("E010", line_no, 1, "unterminated quoted string"))
+                diags.append(Diagnostic("E002", line_no, 1, "unterminated quoted string"))
             elif re.match(r'\A"((?:[^"\\]|\\.)*)"\|[^|]*\|\Z', item, re.DOTALL):
                 # Quoted text with a single region but no "-" separator: the
-                # time region is missing or malformed (§4.3, clarification 5).
-                diags.append(Diagnostic("E016", line_no, 1, "malformed time, expected HH:MM:SS:CC-HH:MM:SS:CC"))
+                # time region is missing or malformed (§4.3).
+                diags.append(Diagnostic("E008", line_no, 1, "malformed time, expected HH:MM:SS:CC-HH:MM:SS:CC"))
             else:
                 diags.append(
                     Diagnostic(
-                        "E012",
+                        "E004",
                         line_no,
                         1,
                         'entry must be "text"|HH:MM:SS:CC-HH:MM:SS:CC|',
@@ -361,52 +364,50 @@ def parse_entries(
             continue
         raw_text, raw_start, raw_stop = m.group(1), m.group(2), m.group(3)
         problem = check_text(raw_text)
-        if problem == "E011":
-            diags.append(Diagnostic("E011", line_no, 1, "invalid escape sequence in text"))
+        if problem == "E003":
+            diags.append(Diagnostic("E003", line_no, 1, "invalid escape sequence in text"))
             continue
-        if problem == "E026":
-            diags.append(Diagnostic("E026", line_no, 1, "forbidden control character in text"))
+        if problem == "E017":
+            diags.append(Diagnostic("E017", line_no, 1, "forbidden control character in text"))
             continue
         try:
             start = parse_time(raw_start)
             stop = parse_time(raw_stop)
         except ValueError as exc:
             code = str(exc)
-            if code == "E017":
-                diags.append(Diagnostic("E017", line_no, 1, "time component out of range"))
+            if code == "E009":
+                diags.append(Diagnostic("E009", line_no, 1, "time component out of range"))
             else:
-                diags.append(Diagnostic("E016", line_no, 1, "malformed time, expected HH:MM:SS:CC"))
+                diags.append(Diagnostic("E008", line_no, 1, "malformed time, expected HH:MM:SS:CC"))
             continue
         if stop <= start:
-            diags.append(Diagnostic("E018", line_no, 1, "StopTime must be greater than StartTime"))
+            diags.append(Diagnostic("E010", line_no, 1, "StopTime must be greater than StartTime"))
             continue
         text = unescape_text(raw_text)
         if len(text) > MAX_TEXT_CHARS:
-            diags.append(Diagnostic("E025", line_no, 1, f"text longer than {MAX_TEXT_CHARS} characters"))
+            diags.append(Diagnostic("E016", line_no, 1, f"text longer than {MAX_TEXT_CHARS} characters"))
             continue
-        entries.append(Entry(text=text, start=start, stop=stop, line=line_no))
+        entries.append(Entry(text=text, start=start, stop=stop))
     return entries
 
 
-def parse_record(
-    line: str, line_no: int, diags: List[Diagnostic], strict: bool = False
-) -> Optional[Record]:
+def parse_record(line: str, line_no: int, diags: List[Diagnostic]) -> Optional[Record]:
     fields, state = split_top_level(line, ":")
     if state == "quote":
-        diags.append(Diagnostic("E010", line_no, 1, "unterminated quoted string"))
+        diags.append(Diagnostic("E002", line_no, 1, "unterminated quoted string"))
         return None
     if state == "unbalanced":
-        diags.append(Diagnostic("E012", line_no, 1, "unbalanced braces or brackets"))
+        diags.append(Diagnostic("E004", line_no, 1, "unbalanced braces or brackets"))
         return None
     if len(fields) < 3:
         diags.append(
-            Diagnostic("E012", line_no, 1, f"expected 3 or 4 fields, found {len(fields)}")
+            Diagnostic("E004", line_no, 1, f"expected 3 or 4 fields, found {len(fields)}")
         )
         return None
     if len(fields) > 4:
         # A fifth field is a structural error, not trailing content (§8.2).
         diags.append(
-            Diagnostic("E012", line_no, 1, f"expected 3 or 4 fields, found {len(fields)}")
+            Diagnostic("E004", line_no, 1, f"expected 3 or 4 fields, found {len(fields)}")
         )
         return None
 
@@ -415,25 +416,32 @@ def parse_record(
 
     name = fields[0].strip()
     if not name:
-        diags.append(Diagnostic("E013", line_no, 1, "AudioName is empty"))
+        diags.append(Diagnostic("E005", line_no, 1, "AudioName is empty"))
         return None
     if name.startswith("#"):
-        diags.append(Diagnostic("E014", line_no, 1, "AudioName must not start with '#'"))
+        diags.append(Diagnostic("E006", line_no, 1, "AudioName must not start with '#'"))
         return None
     for bad in '"{}[]':
         if bad in name:
-            diags.append(Diagnostic("E014", line_no, 1, f"illegal character {bad!r} in AudioName"))
+            diags.append(Diagnostic("E006", line_no, 1, f"illegal character {bad!r} in AudioName"))
             return None
     if len(name) > MAX_NAME_CHARS:
-        diags.append(Diagnostic("E025", line_no, 1, f"AudioName longer than {MAX_NAME_CHARS} characters"))
+        diags.append(Diagnostic("E016", line_no, 1, f"AudioName longer than {MAX_NAME_CHARS} characters"))
         return None
 
-    entries = parse_entries(fields[1], line_no, diags, strict)
+    entries = parse_entries(fields[1], line_no, diags)
 
     color_raw = fields[2].strip()
+    if color_raw.startswith("[") and color_raw.endswith("]"):
+        inner = color_raw[1:-1]
+        if inner != inner.strip():
+            diags.append(
+                Diagnostic("W004", line_no, 1, "non-canonical whitespace inside the colour")
+            )
+            color_raw = "[" + inner.strip() + "]"
     m = COLOR_RE.match(color_raw)
     if not m:
-        diags.append(Diagnostic("E021", line_no, 1, "colour must be [#RRGGBB]"))
+        diags.append(Diagnostic("E013", line_no, 1, "colour must be [#RRGGBB]"))
         return None
     color = m.group(1)
 
@@ -443,10 +451,10 @@ def parse_record(
         if not TYPE_RE.match(type_raw):
             if TRAILING_RE.match(type_raw):
                 diags.append(
-                    Diagnostic("E027", line_no, 1, "trailing content after the Type field")
+                    Diagnostic("E018", line_no, 1, "trailing content after the Type field")
                 )
             else:
-                diags.append(Diagnostic("E023", line_no, 1, "malformed Type token"))
+                diags.append(Diagnostic("E014", line_no, 1, "malformed Type token"))
             return None
         canonical = REGISTERED_TYPES.get(type_raw.lower())
         if canonical is None:
@@ -461,7 +469,7 @@ def parse_record(
     ordering_failed = False
     for prev, cur in zip(entries, entries[1:]):
         if cur.start < prev.start:
-            diags.append(Diagnostic("E019", line_no, 1, "entries are not ordered by StartTime"))
+            diags.append(Diagnostic("E011", line_no, 1, "entries are not ordered by StartTime"))
             ordering_failed = True
             break
     if not ordering_failed:
@@ -470,32 +478,30 @@ def parse_record(
                 diags.append(Diagnostic("W002", line_no, 1, "overlapping entries"))
                 break
 
-    return Record(
-        name=name,
-        entries=entries,
-        color=color,
-        type=track_type,
-        line=line_no,
-    )
+    return Record(name=name, entries=entries, color=color, type=track_type)
 
 
 # --- Document parsing -------------------------------------------------------
 
 
-def parse_text(text: str, *, path: str = "<memory>", strict: bool = False) -> Document:
+def parse_text(text: str) -> Document:
     doc = Document()
     diags = doc.diagnostics
 
-    if len(text.encode("utf-8", errors="replace")) > MAX_FILE_BYTES:
-        diags.append(Diagnostic("E025", 1, 1, "file exceeds 8 MiB"))
-        return doc
+    size = len(text.encode("utf-8", errors="replace"))
 
     if text.startswith("\ufeff"):
         text = text[1:]
         diags.append(Diagnostic("W001", 1, 1, "file starts with a byte order mark"))
 
+    # Encoding/content is stage 1 and the size limit is stage 12 (§8.2), so
+    # E001 wins when a file trips both.
     if "\x00" in text:
         diags.append(Diagnostic("E001", 1, 1, "file contains a NUL byte"))
+        return doc
+
+    if size > MAX_FILE_BYTES:
+        diags.append(Diagnostic("E016", 1, 1, "file exceeds 8 MiB"))
         return doc
 
     if text and not text.endswith(("\n", "\r")):
@@ -513,7 +519,7 @@ def parse_text(text: str, *, path: str = "<memory>", strict: bool = False) -> Do
 
     for index, raw_line in enumerate(lines, start=1):
         if len(raw_line.encode("utf-8")) > MAX_LINE_CHARS:
-            diags.append(Diagnostic("E025", index, 1, "line exceeds 64 KiB"))
+            diags.append(Diagnostic("E016", index, 1, "line exceeds 64 KiB"))
             continue
         stripped = raw_line.strip()
         if not stripped:
@@ -527,16 +533,16 @@ def parse_text(text: str, *, path: str = "<memory>", strict: bool = False) -> Do
                 continue
             record_count += 1
             if record_count > MAX_RECORDS:
-                diags.append(Diagnostic("E025", index, 1, f"more than {MAX_RECORDS} records"))
+                diags.append(Diagnostic("E016", index, 1, f"more than {MAX_RECORDS} records"))
                 break
-            record = parse_record(raw_line, index, diags, strict)
+            record = parse_record(raw_line, index, diags)
             if record is None:
-                doc.blocks.append(("comment", stripped))
+                doc.blocks.append(("comment", raw_line))
                 continue
             if record.name in names:
                 diags.append(
                     Diagnostic(
-                        "E015",
+                        "E007",
                         index,
                         1,
                         f"duplicate AudioName {record.name!r} (first seen on line {names[record.name]})",
@@ -550,20 +556,20 @@ def parse_text(text: str, *, path: str = "<memory>", strict: bool = False) -> Do
 
         if raw_line.startswith("#!cut "):
             # A retired record: a comment that must still be a valid record
-            # (RFC 0002 D4''). Parsed into a scratch list so its E-codes cannot
+            # (§5.4). Parsed into a scratch list so its E-codes cannot
             # invalidate the file; a bare `#!cut` with no payload is just a
-            # comment (§5.4).
+            # comment.
             payload = raw_line[len("#!cut ") :]
             scratch: List[Diagnostic] = []
-            retired = parse_record(payload, index, scratch, strict)
+            retired = parse_record(payload, index, scratch)
             fatal_errors = [d for d in scratch if d.severity == "error"]
             if retired is None or fatal_errors:
-                code = fatal_errors[0].code if fatal_errors else "E012"
+                code = fatal_errors[0].code if fatal_errors else "E004"
                 message = fatal_errors[0].message if fatal_errors else "not a record"
                 diags.append(
                     Diagnostic("W008", index, 1, f"retired record does not parse ({code}: {message})")
                 )
-                doc.blocks.append(("comment", stripped))
+                doc.blocks.append(("comment", raw_line))
             else:
                 # A valid but non-canonical payload keeps its own warnings
                 # (W004/W002/W005) instead of being reported as broken.
@@ -576,19 +582,18 @@ def parse_text(text: str, *, path: str = "<memory>", strict: bool = False) -> Do
             m = MAGIC_RE.match(stripped)
             if index != 1:
                 diags.append(Diagnostic("W006", index, 1, "version marker is not the first line"))
-                doc.blocks.append(("comment", stripped))
+                doc.blocks.append(("comment", raw_line))
                 continue
             if not m:
                 # A first line that starts with "#!iac" but does not parse is an
                 # ordinary comment, with no diagnostic (§3.3).
-                doc.blocks.append(("comment", stripped))
+                doc.blocks.append(("comment", raw_line))
                 continue
             major, minor = int(m.group(1)), int(m.group(2))
-            doc.version = (major, minor)
             if major != SUPPORTED_MAJOR:
                 diags.append(
                     Diagnostic(
-                        "E024",
+                        "E015",
                         index,
                         1,
                         f"file declares version {major}.{minor}, this parser supports {SUPPORTED_MAJOR}.x",
@@ -604,14 +609,14 @@ def parse_text(text: str, *, path: str = "<memory>", strict: bool = False) -> Do
                         f"file declares newer minor version {major}.{minor}",
                     )
                 )
-            doc.blocks.append(("directive", stripped))
+            doc.blocks.append(("directive", raw_line))
             continue
 
         if raw_line.startswith("#@"):
             m = DIRECTIVE_RE.match(stripped)
             if not m:
                 diags.append(Diagnostic("W006", index, 1, "malformed directive, ignored"))
-                doc.blocks.append(("comment", stripped))
+                doc.blocks.append(("comment", raw_line))
                 continue
             name, value = m.group(1), m.group(2)
             if name == "language":
@@ -622,16 +627,16 @@ def parse_text(text: str, *, path: str = "<memory>", strict: bool = False) -> Do
                 language_seen = True
             else:
                 diags.append(Diagnostic("W006", index, 1, f"unknown directive {name!r}, ignored"))
-            doc.blocks.append(("directive", stripped))
+            doc.blocks.append(("directive", raw_line))
             continue
 
         # Remaining lines start with '#' and are plain comments (§3.2).
-        doc.blocks.append(("comment", stripped))
+        doc.blocks.append(("comment", raw_line))
 
     return doc
 
 
-def parse_file(path: str, *, strict: bool = False) -> Document:
+def parse_file(path: str) -> Document:
     with open(path, "rb") as handle:
         data = handle.read()
     try:
@@ -642,28 +647,28 @@ def parse_file(path: str, *, strict: bool = False) -> Document:
             Diagnostic("E001", 1, 1, f"file is not valid UTF-8 ({exc.reason} at byte {exc.start})")
         )
         return doc
-    return parse_text(text, path=path, strict=strict)
+    return parse_text(text)
 
 
 # --- Rendering --------------------------------------------------------------
 
 
 def render_canonical(doc: Document) -> str:
+    """Serialise a parsed document in canonical form (§7).
+
+    Comments and directives are written as they were read; blank lines keep
+    their positions; only record lines are rewritten.
+    """
     out: List[str] = []
     for kind, payload in doc.blocks:
-        if kind == "blank":
-            if out and out[-1] != "":
-                out.append("")
-        elif kind == "comment":
-            out.append(str(payload))
-        elif kind == "directive":
-            out.append(str(payload))
+        if kind in ("blank", "comment", "directive"):
+            out.append("" if kind == "blank" else str(payload))
         elif kind == "record":
             out.append(payload.render())  # type: ignore[union-attr]
         elif kind == "retired":
             out.append("#!cut " + payload.render())  # type: ignore[union-attr]
-    while out and out[-1] == "":
-        out.pop()
+    if not out:
+        return ""
     return "\n".join(out) + "\n"
 
 
@@ -675,8 +680,6 @@ def sanitize_name(stem: str) -> str:
     cleaned = " ".join(cleaned.split())
     if not cleaned:
         cleaned = "track"
-    if cleaned[0] == "#":
-        cleaned = "_" + cleaned
     return cleaned[:MAX_NAME_CHARS]
 
 
@@ -688,7 +691,7 @@ def from_srt(text: str, name: str) -> Record:
     """Convert SRT cues into a single IAC record.
 
     Text spanning several lines is joined with a single space; that loss is
-    documented in docs/guides/conversion.md.
+    documented in docs/conversion.md.
     """
     normalized = text.replace("\r\n", "\n").replace("\r", "\n")
     cues: List[Entry] = []
@@ -707,13 +710,17 @@ def from_srt(text: str, name: str) -> Record:
             continue
         start = srt_timestamp_to_cs(*m.group(1, 2, 3, 4))
         stop = srt_timestamp_to_cs(*m.group(5, 6, 7, 8))
+        if start > MAX_CS or stop > MAX_CS:
+            raise ValueError(
+                f"cue {lines[time_line_index].strip()!r} is outside IAC's 00:00:00:00-99:59:59:99 range"
+            )
         if stop <= start:
             stop = start + 1
         payload = " ".join(ln.strip() for ln in lines[time_line_index + 1 :])
         if not payload:
             continue
         payload = re.sub(r"<[^>]+>", "", payload)
-        cues.append(Entry(text=payload, start=start, stop=stop, line=0))
+        cues.append(Entry(text=payload, start=start, stop=stop))
     cues.sort(key=lambda e: e.start)
     return Record(name=name, entries=cues, color="FFFFFF")
 
@@ -732,13 +739,13 @@ def iter_iac_paths(paths: Iterable[str]) -> Iterable[str]:
             yield path
 
 
-def cmd_validate(paths: List[str], as_json: bool, strict: bool) -> int:
+def cmd_validate(paths: List[str], as_json: bool) -> int:
     results = []
     worst = 0
     errors = 0
     warnings = 0
     for path in iter_iac_paths(paths):
-        doc = parse_file(path, strict=strict)
+        doc = parse_file(path)
         severity = 0
         if doc.warnings:
             severity = max(severity, 1)
@@ -766,39 +773,52 @@ def cmd_validate(paths: List[str], as_json: bool, strict: bool) -> int:
     return 2 if worst == 2 else worst
 
 
-def cmd_fmt(path: str, check: bool, to_stdout: bool) -> int:
-    doc = parse_file(path)
-    if doc.errors:
-        for diag in doc.diagnostics:
-            if diag.severity == "error":
-                print(f"{path}:{diag}", file=sys.stderr)
+def cmd_fmt(paths: List[str], check: bool, to_stdout: bool) -> int:
+    targets = list(iter_iac_paths(paths))
+    if not targets:
+        print("no .iac files found", file=sys.stderr)
         return 2
-    canonical = render_canonical(doc)
-    with open(path, "r", encoding="utf-8", newline="") as handle:
-        original = handle.read()
-    if original == canonical:
-        if not to_stdout:
-            print(f"{path}: already canonical")
-        else:
+    if to_stdout and len(targets) != 1:
+        print("--stdout needs exactly one file", file=sys.stderr)
+        return 2
+    worst = 0
+    for path in targets:
+        doc = parse_file(path)
+        if doc.errors:
+            for diag in doc.diagnostics:
+                if diag.severity == "error":
+                    print(f"{path}:{diag}", file=sys.stderr)
+            worst = 2
+            continue
+        canonical = render_canonical(doc)
+        with open(path, "r", encoding="utf-8", newline="") as handle:
+            original = handle.read()
+        if original == canonical:
+            if to_stdout:
+                sys.stdout.write(canonical)
+            continue
+        if check:
+            print(f"{path}: not canonical")
+            worst = 2
+            continue
+        if to_stdout:
             sys.stdout.write(canonical)
-        return 0
-    if check:
-        print(f"{path}: not canonical")
-        return 2
-    if to_stdout:
-        sys.stdout.write(canonical)
-        return 0
-    with open(path, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write(canonical)
-    print(f"{path}: rewritten")
-    return 0
+            continue
+        with open(path, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(canonical)
+        print(f"{path}: rewritten")
+    return worst
 
 
 def cmd_from_srt(source: str, target: str, name: Optional[str]) -> int:
     with open(source, "r", encoding="utf-8-sig") as handle:
         text = handle.read()
     track = sanitize_name(name or os.path.splitext(os.path.basename(source))[0])
-    record = from_srt(text, track)
+    try:
+        record = from_srt(text, track)
+    except ValueError as exc:
+        print(f"{source}: {exc}", file=sys.stderr)
+        return 2
     if not record.entries:
         print(f"{source}: no cues found", file=sys.stderr)
         return 2
@@ -813,7 +833,7 @@ def migrate_text(text: str) -> Tuple[str, int]:
     """Rewrite the pre-1.0 four/five field record into the current grammar.
 
     `: true` is dropped, `: false` becomes a `#!cut` retired record. Idempotent:
-    a record whose fourth field is a Type token is left alone (RFC 0002 §4).
+    a record whose fourth field is a Type token is left alone.
     """
     normalized = text.replace("\r\n", "\n").replace("\r", "\n")
     lines = normalized.split("\n")
@@ -887,18 +907,17 @@ def main(argv: List[str]) -> int:
     command, rest = argv[0], argv[1:]
     if command == "validate":
         as_json = "--json" in rest
-        strict = "--strict" in rest
         paths = [a for a in rest if not a.startswith("--")]
         if not paths:
             return usage()
-        return cmd_validate(paths, as_json, strict)
+        return cmd_validate(paths, as_json)
     if command == "fmt":
         check = "--check" in rest
         to_stdout = "--stdout" in rest
         paths = [a for a in rest if not a.startswith("--")]
-        if len(paths) != 1:
+        if not paths:
             return usage()
-        return cmd_fmt(paths[0], check, to_stdout)
+        return cmd_fmt(paths, check, to_stdout)
     if command == "from-srt":
         name = None
         args = []

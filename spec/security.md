@@ -3,7 +3,7 @@
 - **Status:** Informative
 - **Applies to:** IAC 1.0
 
-This appendix expands §13 of `spec/iac-1.0.md`. It describes the threat model, the
+This page expands §13 of `spec/iac-1.0.md`. It describes the threat model, the
 properties that make IAC safe to parse, the resource limits an implementation must
 enforce, and the residual risks that are outside the format.
 
@@ -65,7 +65,7 @@ if it documents them, and must not reject a file within the minimum.
 | Huge file | 8 MiB accepted minimum | Enforce the limit while reading, not after buffering the whole file. |
 | Very long line | 64 KiB accepted minimum | Reject at the limit. Do not build a token list from an unbounded line. |
 | Many records | 10 000 accepted minimum | Bound the record table. |
-| Many entries in one record | 4 096 accepted minimum | Bound the entry list; do not recurse per entry. |
+| Many entries in one record | the 64 KiB line limit bounds the count | Bound the entry list; do not recurse per entry. |
 | Long text | 4 096 code points per text | Bound after escape processing. |
 | Long AudioName | 256 code points | Bound before duplicate detection. |
 
@@ -98,7 +98,7 @@ An implementation that claims Parser conformance SHOULD verify all of the follow
 2. Reject `NUL` anywhere (E001).
 3. Accept at most one leading BOM, ignore it, and report W001; a BOM elsewhere is data.
 4. Strip exactly one line terminator per line; accept LF, CRLF, and CR.
-5. Enforce the file, line, record, entry, text, and AudioName limits of §9.
+5. Enforce the file, line, record, text, and AudioName limits of §9.
 6. Tokenize with the §3.5 state machine. Never split on a plain textual ` : `; treat a
    `#!cut` line as a comment and never as a record.
 7. Bound brace and bracket depth, and require it to return to 0 at end of line; do not
@@ -120,7 +120,7 @@ An implementation that claims Parser conformance SHOULD verify all of the follow
   application resources, not references from the file.
 - A renderer MUST NOT display retired records (`#!cut` lines), including in debug
   overlays that a user can capture.
-- Timing values are bounded by `99:59:59:99` = 359 999 999 cs, which fits in a signed
+- Timing values are bounded by `99:59:59:99` = 35 999 999 cs, which fits in a signed
   32-bit integer; implementations SHOULD use 64-bit arithmetic when converting to
   seconds or nanoseconds.
 - Overlapping entries MUST all be displayed; an attacker cannot hide a cue by

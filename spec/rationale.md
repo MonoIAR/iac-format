@@ -3,7 +3,7 @@
 - **Status:** Informative
 - **Applies to:** IAC 1.0
 
-This appendix records why the decisions in RFC 0001 were taken. It is not normative;
+This page records why the decisions in RFC 0001 were taken. It is not normative;
 `spec/iac-1.0.md` is authoritative. Each section states the problem, the chosen rule,
 the alternatives rejected, and the test hook that pins the decision.
 
@@ -56,7 +56,7 @@ visible as a flicker or a clipped syllable at every boundary.
 **Chosen.** `[StartTime, StopTime)`: visible at the start, not visible at the stop, and
 `StopTime` MUST be strictly greater than `StartTime`.
 
-**Evidence.** `examples/music.iac` chains twenty cues whose stop and next start are the
+**Evidence.** `examples/music.iac` chains nineteen cues whose stop and next start are the
 same value, for example `00:00:08:58-00:00:17:20` followed by
 `00:00:17:20-00:00:25:99`. Under an inclusive stop, the boundary frame belongs to both
 cues and a renderer must choose; under a half-open stop, it belongs to exactly one and
@@ -64,7 +64,7 @@ the file is simply correct.
 
 **Consequence.** Concatenating two files cannot create a one-centisecond overlap from
 touching boundaries. Cue arithmetic composes. Zero-length cues are impossible, so a
-typo that swaps the times is caught (E018) rather than producing an invisible entry.
+typo that swaps the times is caught (E010) rather than producing an invisible entry.
 
 **Rejected.**
 
@@ -102,8 +102,8 @@ the file. This keeps one file valid for every display rate.
 - Floating-point seconds. Not deterministic across languages and runtimes; bad for
   golden tests.
 
-**Test hooks.** `testdata/invalid/bad-time-shape.iac` (E016),
-`testdata/invalid/time-range.iac` (E017), and the `CC` range in §6.1.
+**Test hooks.** `testdata/invalid/bad-time-shape.iac` (E008),
+`testdata/invalid/time-range.iac` (E009), and the `CC` range in §6.1.
 
 ## 4. Why the Type set is open but registered (D6)
 
@@ -144,7 +144,7 @@ versioning strategy.
 
 **Chosen.** An optional first line, `#!iac <MAJOR>.<MINOR>`, in the comment namespace.
 Because it is a comment, a parser written against the draft ignores it and still reads
-the file. A conforming parser reads it, rejects a newer major with E024, and warns but
+the file. A conforming parser reads it, rejects a newer major with E015, and warns but
 continues on a newer minor (W007).
 
 **Why the comment namespace.** Any non-comment header would break every existing parser
@@ -166,13 +166,13 @@ constructs: comments, directives, and registry values.
 ## 6. Secondary decisions
 
 - **Colour is required and alpha is rejected (D5).** Silently dropping an alpha channel
-  produces visibly wrong colours. Rejecting `#RRGGBBAA` with E021 is loud, local, and
-  fixable; 8-digit colour is a 2.0 candidate, because a 1.0 parser rejects it and section 4.2 forbids breaking additions in a minor.
+  produces visibly wrong colours. Rejecting `#RRGGBBAA` with E013 is loud, local, and
+  fixable; truncating it would ship the wrong colour.
 - **Exactly two escapes (D9).** "Preserve unknown escapes" makes one file mean different
-  things in different tools. `\"` and `\\` cover subtitle text; everything else is E011.
-- **Directives in `#@` (D8).** Localisation and sync offset are the next requests every
-  studio makes. Reserving the namespace now avoids a syntax change later, and unknown
-  directives are ignored with W006 so old parsers never fail on new metadata.
+  things in different tools. `\"` and `\\` cover subtitle text; everything else is E003.
+- **Directives in `#@` (D8).** The namespace is reserved so file-scoped metadata can be
+  added without a syntax change, and unknown directives are ignored with W006 so an old
+  parser never fails on new metadata.
 - **Deterministic canonical form (D11).** Golden tests, reviewable diffs, and `iac fmt`
   require one output for one input. Sorting cues and omitting `Voice` are the two choices
   that make output stable without reordering records.
@@ -182,9 +182,9 @@ constructs: comments, directives, and registry values.
 - **Limits (D12).** "Unbounded" is not implementable. The numbers are far above any real
   subtitle file and let a parser size buffers before reading.
 
-## 7. Why the `enabled` field was removed (RFC 0002)
+## 7. Why there is no `enabled` field
 
-**Problem.** RFC 0001 made the fourth field a required boolean. No consumer needs it. A
+**Problem.** The draft made the fourth field a required boolean. No consumer needs it. A
 renderer that must not display a cue cannot distinguish it from a cue that is absent;
 localisation needs a workflow decision, not a per-line flag; build inclusion is decided by
 which file is built. The field cost every author a separator and a value on every line,
@@ -211,15 +211,26 @@ detection would flag on every run. **Why not `#@cut`.** `#@` is file-scoped meta
   in kind.
 - Reuse the slot as `duration`: duplicates data in the audio asset and invites drift.
 
-**Consequence.** E022 is retired (the number is not reused), W008 is added, and the
-migration is mechanical. This changed before 1.0.0 was announced, so no version bump
-applies.
+**Consequence.** W008 is added, and the migration is mechanical. This changed before
+1.0.0 was announced, so no version bump applies.
 
-## 8. What would reopen these decisions
+## 8. Questions people ask
 
-- Evidence that quote-aware tokenization is a measurable performance problem on
-  realistic files. It is linear; no such evidence exists.
-- A profile that genuinely needs frame-accurate authoring. It would be a separate import
-  or export mapping, not a change to `CC`.
-- A Type value that needs per-entry semantics. That is a 1.1 feature with its own RFC,
-  not a reason to reopen the open set.
+**Why not JSON?** A subtitle file is read and reviewed as text. JSON would add escaping
+to every quotation mark, forbid the natural one-line-per-track layout, and make a diff
+unreadable. IAC needs no parser library and no schema to be legible.
+
+**Why not a schema-first format?** The grammar is small enough to state in one page and
+to test with a corpus. A schema would add a layer that has to be kept in sync with the
+text without making any file easier to write.
+
+**Is it only for games?** No. It fits anything where timed text is authored next to an
+audio asset: interactive dialogue, cutscene subtitles, lyric tracks, tutorial voice-over.
+The example set comes from a game because that is where the format was used first.
+
+**What about right-to-left and vertical text?** The format stores Unicode code points and
+says nothing about direction, shaping, or layout. A renderer applies its own bidi and
+line-breaking rules; IAC neither encodes nor overrides them.
+
+**Can text contain a newline?** No. LF and CR end the line, so a line break inside quoted
+text is E002. Use a second cue when the text needs two display lines.

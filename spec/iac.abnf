@@ -103,7 +103,7 @@ subtitle-set    = "{" entry *( "," SP entry ) "}"
 entry           = text "|" time "-" time "|"
 
 ; Text: DQUOTE-delimited, UTF-8, no unescaped DQUOTE. The only escapes are
-; \" and \\. Text MAY be empty. Forbidden control characters (E026) are
+; \" and \\. Text MAY be empty. Forbidden control characters (E017) are
 ; excluded by text-char: C0 controls except HTAB, and DEL. C1 controls are
 ; not excluded by 1.0.
 text            = DQUOTE *( text-char / escape ) DQUOTE
@@ -151,14 +151,14 @@ UTF8-tail       = %x80-BF
 ; The following are normative but not expressible in ABNF; a conforming
 ; parser enforces them in the order given by spec/iac-1.0.md §8.2:
 ;
-;   * field count is 3 or 4 (E012);
-;   * AudioName uniqueness among live records, exact and case-sensitive (E015);
-;   * entry StartTime non-decreasing within a record (E019);
-;   * time component ranges (E017) and StopTime > StartTime (E018);
-;   * the D12 limits in spec/iac-1.0.md §9, including 8 MiB per file,
-;     64 KiB per line, 10 000 records, 4 096 entries, 4 096 code points
-;     per text, and 256 code points per AudioName (E025 in strict mode);
-;   * the control-character exclusion in field 1 and in text (E026);
+;   * field count is 3 or 4 (E004);
+;   * AudioName uniqueness among live records, exact and case-sensitive (E007);
+;   * entry StartTime non-decreasing within a record (E011);
+;   * time component ranges (E009) and StopTime > StartTime (E010);
+;   * the limits in spec/iac-1.0.md §9, including 8 MiB per file, 64 KiB
+;     per line, 10 000 records, 4 096 code points per text, and 256 code
+;     points per AudioName (E016);
+;   * the control-character exclusion in field 1 and in text (E017);
 ;   * the mapping from every failure to its diagnostic code (§8);
 ;   * retired payloads are a linter concern (W008), not a parser error.
 ;

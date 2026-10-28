@@ -6,6 +6,10 @@ These test the behaviour the specification promises; testdata/conformance.json
 tests the error taxonomy. Both must pass before a release.
 """
 
+import contextlib
+import glob
+import io
+import json
 import os
 import sys
 import unittest
@@ -15,11 +19,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from iac_lint import (  # noqa: E402
     fmt_time,
     from_srt,
+    main,
     migrate_text,
+    parse_file,
     parse_text,
     render_canonical,
     split_top_level,
 )
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 GOOD = 'VO_1 : {"Hello"|00:00:01:00-00:00:02:00|} : [#FFFFFF]'
 
@@ -52,10 +60,10 @@ class TestSeparator(unittest.TestCase):
         _parts, state = split_top_level('a : {"b"} : c', ":")
         self.assertEqual(state, "ok")
 
-    def test_unterminated_quote_is_e010(self):
+    def test_unterminated_quote_is_e002(self):
         line = 'VO_1 : {"unclosed|00:00:01:00-00:00:02:00|} : [#FFFFFF]'
         doc = parse_text(line + "\n")
-        self.assertEqual({d.code for d in doc.errors}, {"E010"})
+        self.assertEqual({d.code for d in doc.errors}, {"E002"})
 
 
 class TestEscapes(unittest.TestCase):
@@ -75,7 +83,7 @@ class TestEscapes(unittest.TestCase):
     def test_unknown_escape_is_rejected(self):
         line = r'VO_1 : {"a\nb"|00:00:01:00-00:00:02:00|} : [#FFFFFF]'
         doc = parse_text(line + "\n")
-        self.assertEqual({d.code for d in doc.errors}, {"E011"})
+        self.assertEqual({d.code for d in doc.errors}, {"E003"})
 
 
 class TestTime(unittest.TestCase):
@@ -98,7 +106,7 @@ class TestTime(unittest.TestCase):
     def test_stop_must_exceed_start(self):
         line = 'VO_1 : {"a"|00:00:02:00-00:00:02:00|} : [#FFFFFF]'
         doc = parse_text(line + "\n")
-        self.assertEqual({d.code for d in doc.errors}, {"E018"})
+        self.assertEqual({d.code for d in doc.errors}, {"E010"})
 
     def test_time_format_round_trip(self):
         self.assertEqual(fmt_time(12345), "00:02:03:45")
@@ -108,7 +116,7 @@ class TestTime(unittest.TestCase):
 class TestStructure(unittest.TestCase):
     def test_duplicate_name_is_error(self):
         doc = parse_text(GOOD + "\n" + GOOD + "\n")
-        self.assertEqual({d.code for d in doc.errors}, {"E015"})
+        self.assertEqual({d.code for d in doc.errors}, {"E007"})
 
     def test_unsorted_entries_is_error(self):
         line = (
@@ -116,11 +124,11 @@ class TestStructure(unittest.TestCase):
             " : [#FFFFFF]"
         )
         doc = parse_text(line + "\n")
-        self.assertEqual({d.code for d in doc.errors}, {"E019"})
+        self.assertEqual({d.code for d in doc.errors}, {"E011"})
 
     def test_version_major_is_enforced(self):
         doc = parse_text("#!iac 2.0\n" + GOOD + "\n")
-        self.assertEqual({d.code for d in doc.errors}, {"E024"})
+        self.assertEqual({d.code for d in doc.errors}, {"E015"})
 
     def test_unknown_type_is_warning_not_error(self):
         line = 'VO_1 : {"a"|00:00:01:00-00:00:02:00|} : [#FFFFFF] : Battle'
@@ -144,19 +152,19 @@ class TestStructure(unittest.TestCase):
 
 
 class TestFieldCount(unittest.TestCase):
-    def test_two_fields_is_e012(self):
+    def test_two_fields_is_e004(self):
         doc = parse_text('VO_1 : {"a"|00:00:01:00-00:00:02:00|}\n')
-        self.assertEqual({d.code for d in doc.errors}, {"E012"})
+        self.assertEqual({d.code for d in doc.errors}, {"E004"})
 
-    def test_five_fields_is_e012(self):
+    def test_five_fields_is_e004(self):
         line = 'VO_1 : {"a"|00:00:01:00-00:00:02:00|} : [#FFFFFF] : Music : Extra'
         doc = parse_text(line + "\n")
-        self.assertEqual({d.code for d in doc.errors}, {"E012"})
+        self.assertEqual({d.code for d in doc.errors}, {"E004"})
 
-    def test_trailing_content_after_type_is_e027(self):
+    def test_trailing_content_after_type_is_e018(self):
         line = 'VO_1 : {"a"|00:00:01:00-00:00:02:00|} : [#FFFFFF] : Music extra'
         doc = parse_text(line + "\n")
-        self.assertEqual({d.code for d in doc.errors}, {"E027"})
+        self.assertEqual({d.code for d in doc.errors}, {"E018"})
 
 
 class TestRetiredRecords(unittest.TestCase):
@@ -291,6 +299,137 @@ class TestSrtImport(unittest.TestCase):
         doc = parse_text("#!iac 1.0\n" + record.render() + "\n")
         self.assertEqual(doc.errors, [])
         self.assertEqual(len(doc.records[0].entries), 2)
+
+
+class TestBoundaryCodes(unittest.TestCase):
+    """The distinctions §8.2 makes between structural and field errors."""
+
+    def test_stray_close_brace_in_name_is_e006(self):
+        line = 'VO_1} : {"a"|00:00:01:00-00:00:02:00|} : [#FFFFFF]'
+        doc = parse_text(line + "\n")
+        self.assertEqual({d.code for d in doc.errors}, {"E006"})
+
+    def test_stray_close_bracket_in_name_is_e006(self):
+        line = 'VO_] : {"a"|00:00:01:00-00:00:02:00|} : [#FFFFFF]'
+        doc = parse_text(line + "\n")
+        self.assertEqual({d.code for d in doc.errors}, {"E006"})
+
+    def test_empty_field_two_is_e012(self):
+        doc = parse_text('VO_1 :  : [#FFFFFF]\n')
+        self.assertEqual({d.code for d in doc.errors}, {"E012"})
+
+    def test_whitespace_inside_braces_is_w004_and_not_canonical(self):
+        line = 'VO_1 : { "a"|00:00:01:00-00:00:02:00| } : [#FFFFFF]'
+        doc = parse_text(line + "\n")
+        self.assertEqual(doc.errors, [])
+        self.assertEqual([d.code for d in doc.warnings], ["W004"])
+        self.assertNotIn("{ ", render_canonical(doc))
+
+    def test_whitespace_inside_colour_brackets_is_w004(self):
+        line = 'VO_1 : {"a"|00:00:01:00-00:00:02:00|} : [ #FFFFFF ]'
+        doc = parse_text(line + "\n")
+        self.assertEqual(doc.errors, [])
+        self.assertEqual([d.code for d in doc.warnings], ["W004"])
+
+    def test_extra_space_around_separator_is_w004(self):
+        line = 'VO_1  :  {"a"|00:00:01:00-00:00:02:00|}  :  [#FFFFFF]'
+        doc = parse_text(line + "\n")
+        self.assertEqual(doc.errors, [])
+        self.assertEqual([d.code for d in doc.warnings], ["W004"])
+
+
+class TestLimits(unittest.TestCase):
+    def test_long_audio_name_is_e016(self):
+        line = "N" * 257 + ' : {"a"|00:00:01:00-00:00:02:00|} : [#FFFFFF]'
+        doc = parse_text(line + "\n")
+        self.assertEqual({d.code for d in doc.errors}, {"E016"})
+
+    def test_long_text_is_e016(self):
+        line = 'VO_1 : {"' + "a" * 4097 + '"|00:00:01:00-00:00:02:00|} : [#FFFFFF]'
+        doc = parse_text(line + "\n")
+        self.assertEqual({d.code for d in doc.errors}, {"E016"})
+
+    def test_nul_is_e001(self):
+        doc = parse_text('VO_1 : {"a\x00b"|00:00:01:00-00:00:02:00|} : [#FFFFFF]\n')
+        self.assertEqual({d.code for d in doc.errors}, {"E001"})
+
+    def test_e001_wins_over_the_size_limit(self):
+        text = "\x00" + "a" * (8 * 1024 * 1024 + 16)
+        doc = parse_text(text)
+        self.assertEqual({d.code for d in doc.errors}, {"E001"})
+
+
+class TestFormatterVerbatim(unittest.TestCase):
+    def test_comment_trailing_spaces_are_preserved(self):
+        text = "# comment with spaces   \n" + GOOD + "\n"
+        out = render_canonical(parse_text(text))
+        self.assertEqual(out, text)
+
+    def test_blank_line_runs_are_preserved(self):
+        text = "# a\n\n\n" + GOOD + "\n"
+        out = render_canonical(parse_text(text))
+        self.assertEqual(out, text)
+
+    def test_empty_file_stays_empty(self):
+        self.assertEqual(render_canonical(parse_text("")), "")
+
+    def test_valid_corpus_is_idempotent(self):
+        for path in sorted(glob.glob(os.path.join(ROOT, "testdata", "valid", "*.iac"))):
+            with open(path, "rb") as handle:
+                raw = handle.read()
+            doc = parse_file(path)
+            self.assertEqual(doc.errors, [], path)
+            once = render_canonical(doc)
+            twice = render_canonical(parse_text(once))
+            self.assertEqual(once, twice, path)
+
+    def test_canonical_corpus_files_are_byte_identical(self):
+        canonical = {
+            "colon-in-text.iac", "escapes.iac", "minimal.iac", "newer-minor.iac",
+            "overlap.iac", "retired.iac", "retired-broken.iac", "retired-duplicate.iac",
+            "touching.iac", "types.iac", "unknown-directive.iac", "unknown-type.iac",
+            "versioned.iac",
+        }
+        for name in sorted(canonical):
+            path = os.path.join(ROOT, "testdata", "valid", name)
+            with open(path, "rb") as handle:
+                raw = handle.read()
+            out = render_canonical(parse_file(path)).encode("utf-8")
+            self.assertEqual(out, raw, name)
+
+
+class TestCli(unittest.TestCase):
+    def run_cli(self, *argv):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
+            code = main(list(argv))
+        return code, buffer.getvalue()
+
+    def test_clean_file_exits_zero(self):
+        code, _out = self.run_cli("validate", os.path.join(ROOT, "testdata", "valid", "minimal.iac"))
+        self.assertEqual(code, 0)
+
+    def test_warning_only_exits_one(self):
+        code, _out = self.run_cli("validate", os.path.join(ROOT, "testdata", "valid", "bom.iac"))
+        self.assertEqual(code, 1)
+
+    def test_error_exits_two(self):
+        code, _out = self.run_cli("validate", os.path.join(ROOT, "testdata", "invalid", "bad-color.iac"))
+        self.assertEqual(code, 2)
+
+    def test_fmt_check_on_canonical_directory_exits_zero(self):
+        code, _out = self.run_cli("fmt", "--check", os.path.join(ROOT, "examples"))
+        self.assertEqual(code, 0)
+
+    def test_fmt_check_on_non_canonical_file_exits_two(self):
+        path = os.path.join(ROOT, "testdata", "valid", "comments-blank.iac")
+        code, _out = self.run_cli("fmt", "--check", path)
+        self.assertEqual(code, 2)
+
+    def test_no_arguments_prints_usage_and_exits_two(self):
+        code, out = self.run_cli()
+        self.assertEqual(code, 2)
+        self.assertIn("iac_lint.py", out)
 
 
 if __name__ == "__main__":

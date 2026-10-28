@@ -1,13 +1,6 @@
 # Python
 __pycache__/
 *.py[cod]
-.venv/
-venv/
-
-# Node (future tooling)
-node_modules/
-dist/
-*.tgz
 
 # Editors
 .vscode/

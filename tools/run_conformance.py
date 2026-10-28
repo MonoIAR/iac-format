@@ -60,6 +60,18 @@ def main(argv: List[str]) -> int:
     failures: List[str] = []
     checked: Dict[str, int] = {"ok": 0, "warning": 0, "error": 0}
 
+    # Every .iac file in the suite must be listed, so a case cannot be added and
+    # silently ignored by the runner.
+    listed = {case["file"].replace("\\", "/") for case in cases}
+    on_disk = set()
+    for base, _dirs, names in os.walk(args.suite_dir):
+        for name in names:
+            if name.endswith(".iac"):
+                rel = os.path.relpath(os.path.join(base, name), args.suite_dir)
+                on_disk.add(rel.replace(os.sep, "/"))
+    for orphan in sorted(on_disk - listed):
+        failures.append(f"{orphan}: not listed in conformance.json")
+
     for case in cases:
         relative = case["file"]
         expect = case["expect"]

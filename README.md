@@ -1,12 +1,22 @@
 # IAC subtitle format
 
-IAC (Inline Annotation Container) is a line-oriented plain-text subtitle format that keeps cue timing inline with the text it belongs to, one audio track per line.
+IAC (Inline Annotation Container) is a line-oriented plain-text subtitle format that
+keeps cue timing inline with the text it belongs to, one audio track per line.
 
-**Status:** 1.0.0 — stable, released 2026-10-29. Normative spec: [spec/iac-1.0.md](spec/iac-1.0.md).
+**Status:** 1.0.0 — stable, tagged 2026-10-29, not yet publicly announced. The normative
+specification is [spec/iac-1.0.md](spec/iac-1.0.md).
 
-## A real record
+## The shape of a record
 
-The first record of [examples/music.iac](examples/music.iac) (one record, one physical line in the file; shown wrapped and cut after three cues — the record has 19):
+```text
+AudioName : { "text"|HH:MM:SS:CC-HH:MM:SS:CC|, ... } : [#RRGGBB] [ : Type ]
+```
+
+Three required fields, one optional. Times are `HH:MM:SS:CC` with `CC` in
+centiseconds, never frames, and an interval is half-open: `[start, stop)`.
+
+A real record — the first line of [examples/music.iac](examples/music.iac), wrapped
+here and cut after three of its nineteen cues:
 
 ```iac
 music_KnewBefore : {"I've forgot the way to be myself"|00:00:08:58-00:00:17:20|,
@@ -14,67 +24,68 @@ music_KnewBefore : {"I've forgot the way to be myself"|00:00:08:58-00:00:17:20|,
                     "The shadows in the air, they haunt me still"|00:00:25:99-00:00:40:62|,
                     ...,
                     "The one I knew before"|00:02:17:84-00:03:12:02|} : [#FFFFFF] : Music
-
-# Song "Knew Before" from game BONELAB
-# Copyright: Michael Wyckoff, Stress Level Zero
 ```
-
-Field order is `<AudioName> : {<cue>, <cue>, ...} : [#RRGGBB][ : <Type>]` — three required fields and an optional track type. Times are `HH:MM:SS:CC` with `CC` in centiseconds, and an interval is half-open: `[start, stop)`. A file may open with `#!iac 1.0`; being a comment, it costs nothing to readers that predate it.
 
 ## Why
 
-- **Timing lives with the text.** A line carries its own cues, so translating one line is one edit and the timing stays attached to the sentence it belongs to. There is no separate timing track to keep in sync.
-- **No escaping hell.** Records split on ` : ` only at top level, outside quotes and braces, so `"Chapter : The Fall"` and `"他说 : 你好"` are ordinary text. Dialogue needs no encoding to survive the format.
-- **Plain text that diffs.** One record per line, deterministic canonical form, no binary blobs and no markup soup. A localisation review is a readable diff, and `iac_lint.py fmt` makes it a stable one. A cut line is a `#!cut` comment — it stays in the file, keeps being checked by the linter, and never renders, with no boolean in the record to get wrong.
+- **Timing lives with the text.** A line carries its own cues, so translating one line
+  is one edit and the timing stays attached to the sentence it belongs to.
+- **No escaping hell.** Records split on ` : ` only at top level, outside quotes and
+  braces, so `"Chapter : The Fall"` and `"他说 : 你好"` are ordinary text.
+- **Plain text that diffs.** One record per line, deterministic canonical form, no
+  binary blobs. A cut line is a `#!cut` comment: it stays in the file, keeps being
+  checked, and never renders.
 
-## Quickstart — 60 seconds
+## 60 seconds
 
 ```bash
 python tools/iac_lint.py validate examples/single-subtitle.iac
+python tools/iac_lint.py validate examples/          # directories are walked
+python tools/iac_lint.py fmt --check examples        # is every file canonical?
 ```
 
-Exit `0` means no findings, `1` warnings only, `2` errors. Add `--json` for machine-readable diagnostics. A clean run prints nothing, so silence is success.
-
-```bash
-python tools/iac_lint.py validate examples/
-python tools/iac_lint.py fmt examples/multi-subtitles.iac
-python tools/iac_lint.py from-srt in.srt out.iac
-python tools/iac_lint.py migrate old-draft.iac
-```
-
-`fmt` rewrites one file into canonical form; `from-srt` converts an SRT file; `migrate` rewrites draft-era records that still carry a `: true` / `: false` field. Full walkthrough: [docs/quickstart.md](docs/quickstart.md).
+Exit `0` means no findings and prints nothing; `1` is warnings only; `2` is errors.
+Add `--json` for machine-readable output. There is no install step and no published
+package: the linter is one stdlib-only file that runs from a checkout.
 
 ## Where things live
 
-| What | Where |
+| Path | What it is |
 |---|---|
-| Normative spec | [spec/iac-1.0.md](spec/iac-1.0.md) |
-| Grammar (ABNF) | [spec/iac.abnf](spec/iac.abnf) |
-| Registry | [registry/types.md](registry/types.md), [registry/directives.md](registry/directives.md) |
-| Docs | [docs/index.md](docs/index.md) — quickstart, authoring, parser and conversion guides, error codes |
-| RFC process | [rfcs/0000-template.md](rfcs/0000-template.md), [GOVERNANCE.md](GOVERNANCE.md) |
-| Governance | [GOVERNANCE.md](GOVERNANCE.md), [CONTRIBUTING.md](CONTRIBUTING.md) |
-| Conformance suite | [testdata/](testdata/), reference linter [tools/iac_lint.py](tools/iac_lint.py) |
-| Roadmap | [ROADMAP.md](ROADMAP.md) |
+| [spec/](spec/) | Normative: [the specification](spec/iac-1.0.md), [the grammar](spec/iac.abnf), [the registry](spec/registry.md), plus [rationale](spec/rationale.md) and [security notes](spec/security.md) |
+| [testdata/](testdata/) | 38 conformance cases and [conformance.json](testdata/conformance.json), which maps each case to its expected codes |
+| [tools/](tools/) | Reference linter: validate, format, SRT import, draft migration |
+| [docs/](docs/) | Five guides: [quickstart](docs/quickstart.md), [authoring](docs/authoring.md), [parsing](docs/parsing.md), [conversion](docs/conversion.md), [errors](docs/errors.md) |
+| [rfcs/](rfcs/) | [RFC 0001](rfcs/0001-standardize-iac-1.0.md): why the format looks like this |
+| [examples/](examples/) | Three canonical samples: a song, multiple tracks with a cut line, one Chinese dialogue |
 
-## Compatibility promise
+## When not to use IAC
 
-A parser implementing minor version `x` MUST read any conforming file from minor version `y <= x` without loss of meaning. A parser that meets a file declaring a *newer* minor version does not fail on the version line: it reports W007 and continues as best it can. Only a newer **major** version is fatal (E024). Breaking changes require a major bump and at least one minor release of deprecation — see [GOVERNANCE.md](GOVERNANCE.md).
+IAC describes **what is said and when**, not how it looks. Choose something else if you
+need:
 
-New in 1.0 relative to the draft: exclusive stop times, the `#!iac` version line, registered `Type` values, a defined error taxonomy, and a three-field record — the draft's fourth boolean field is gone, and a cut line is now the `#!cut` comment. `python tools/iac_lint.py migrate` rewrites draft-era files mechanically.
+- positioning, fonts, styling spans, or animation — use ASS or WebVTT with CSS;
+- karaoke or word-level timing — use ASS;
+- per-entry colour or transparency — IAC has one colour per track, no alpha;
+- lossless interchange with an existing subtitle pipeline — IAC is a source format, and
+  converting out of it is lossy by design ([spec §1.1](spec/iac-1.0.md)).
 
-## License
+## Compatibility
 
-| Part | License |
+A parser implementing minor version `x` reads any conforming file from minor `y <= x`
+without loss of meaning. A file that declares a newer minor is not fatal: the parser
+reports W007 and continues. Only a newer major version is fatal (E015). Breaking changes
+require a major bump and at least one minor release of deprecation; the process is in
+[GOVERNANCE.md](GOVERNANCE.md).
+
+## Licence
+
+| Part | Licence |
 |---|---|
-| Specification text (`spec/`, `docs/`, `registry/`, RFCs, this README) | CC BY 4.0 |
-| Reference code (`tools/`, future libraries) | Apache-2.0 |
-| Example `.iac` files (`examples/`) | CC0-1.0 |
+| Specification, docs, registry, RFCs, this README | CC BY 4.0 |
+| Reference code in `tools/` | Apache-2.0 |
+| Example and conformance `.iac` files | CC0-1.0 |
 
-CC0 on examples is deliberate: paste them into a proprietary build without attribution friction. The per-artefact split, including the copyright line, is in [LICENSE](LICENSE).
-
-## Status and roadmap
-
-1.0.0 is the first stable release. Nothing is published to npm, PyPI, or IANA yet: the linter runs from a checkout, `text/x-iac` is an interim unregistered media type, and there are no third-party implementations to point at. 1.1 candidates are listed in [RFC 0001 §4](rfcs/0001-standardize-iac-1.0.md#4-deferred-work); the rollout plan is in [docs/adoption.md](docs/adoption.md) and the dated work list in [ROADMAP.md](ROADMAP.md). Release history: [CHANGELOG.md](CHANGELOG.md).
+The per-artefact split is in [LICENSE](LICENSE).
 
 中文文档：[README.zh-CN.md](README.zh-CN.md)
