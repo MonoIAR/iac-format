@@ -1,5 +1,7 @@
 # Contributing
 
+If you are an automated agent rather than a person, read [`AGENTS.md`](AGENTS.md) first: it is this document compressed to the rules that change what a patch looks like.
+
 ## What is useful
 
 - **A bug report with a file.** The smallest `.iac` file that shows the problem, plus the command you ran and the exit code. A failing conformance case is better than either.
