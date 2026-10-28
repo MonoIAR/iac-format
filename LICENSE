@@ -1,0 +1,43 @@
+# License
+
+IAC is licensed per artefact type, so that both spec implementers and studios
+shipping commercial games can use it without legal friction.
+
+| Path | Content | License | SPDX |
+|------|---------|---------|------|
+| `spec/`, `docs/`, `registry/`, `rfcs/`, `README*.md`, `GOVERNANCE.md` | Specification text and documentation | Creative Commons Attribution 4.0 International | `CC-BY-4.0` |
+| `tools/`, `testdata/` runner code, CI configuration | Reference implementation and test code | Apache License 2.0 | `Apache-2.0` |
+| `examples/`, `testdata/` `.iac` files | Example and conformance data files | CC0 1.0 Universal (public domain dedication) | `CC0-1.0` |
+
+Copyright (c) 2026 MIAR STAFF and IAC contributors.
+
+## Why this split
+
+- **CC BY 4.0 on the specification** lets anyone quote, reprint, translate and
+  build on the normative text, including commercially, as long as attribution
+  is preserved. It does not cover software, which is why the reference
+  implementation is separate.
+- **Apache-2.0 on the reference implementation** includes an explicit patent
+  grant. Studios will not adopt a format whose reference parser has an unclear
+  patent position.
+- **CC0 on the data files** means a studio can copy an example cue sheet into a
+  proprietary project with no attribution obligation and no licence audit.
+
+## Attribution
+
+When redistributing the specification or a derivative, credit:
+
+> "IAC subtitle format specification, version 1.0, CC BY 4.0,
+> https://github.com/<org>/iac-format"
+
+## Before the public announcement
+
+The full legal texts of CC BY 4.0, Apache-2.0 and CC0-1.0 must be vendored into
+this repository from their canonical sources before the first public release;
+the SPDX identifiers above are authoritative in the meantime. Tracked in
+`ROADMAP.md` under v1.0.1.
+
+## Contributions
+
+By submitting a pull request you agree to license your contribution under the
+licence of the directory it lands in. See `CONTRIBUTING.md`.

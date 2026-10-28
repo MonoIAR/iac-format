@@ -1,0 +1,2 @@
+VO_1 : {"Live take."|00:00:00:00-00:00:02:00|} : [#FFFFFF]
+#!cut VO_1 : {"Retired take of the same asset."|00:00:00:00-00:00:01:00|} : [#FFFFFF]

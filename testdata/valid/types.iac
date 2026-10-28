@@ -1,0 +1,5 @@
+VO_1 : {"Spoken line."|00:00:00:00-00:00:02:00|} : [#FFFFFF]
+music_theme : {"Lyric line."|00:00:02:00-00:00:04:00|} : [#FFFFFF] : Music
+sfx_door : {"[door slams]"|00:00:04:00-00:00:06:00|} : [#FFFFFF] : SFX
+narration_01 : {"Narrated line."|00:00:06:00-00:00:08:00|} : [#FFFFFF] : Narration
+ui_prompt : {"Press Start."|00:00:08:00-00:00:10:00|} : [#FFFFFF] : UI

@@ -1,0 +1,7 @@
+# This is a multi subtitles file examples
+# 这是一个多字幕文件实例
+
+Level1VO1 : {"TEXT 1"|00:00:00:22-00:00:02:02|, "TEXT 2"|00:00:02:28-00:00:03:06|} : [#FFFFFF]
+#!cut Level1VO2 : {"A deleted line"|00:00:00:29-00:00:00:92|} : [#FFFFFF]
+
+Level1VO3 : {"TEST TEXT"|00:00:00:24-00:00:02:34|, "TEST TEXT"|00:00:02:50-00:00:03:15|} : [#FFFFFF]

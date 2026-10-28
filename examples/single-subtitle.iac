@@ -1,0 +1,7 @@
+Jay Finale 18 T2_Sec1 : {"那地方看起来或许很平静，但……"|00:00:00:12-00:00:02:45|, "并不是这样……"|00:00:03:19-00:00:04:19|, "那有某种……"|00:00:04:41-00:00:06:09|, "敌对的东西。"|00:00:06:87-00:00:08:72|} : [#FFFFFF]
+
+# (Line from game BONELAB)
+# （来自游戏《BONELAB》的台词）
+
+# Format:
+# Audio_name : {"Subtite1" |start_time-stop_time|, "Subtite2" |start_time-stop_time|} : [#Color] : enable_or_not

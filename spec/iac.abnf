@@ -1,0 +1,166 @@
+; IAC 1.0 — Augmented BNF
+; Normative grammar for spec/iac-1.0.md. Uses RFC 5234 ABNF and RFC 7405
+; case-sensitive %s strings. Terminals such as SP, HTAB, CR, LF, CRLF,
+; DIGIT, HEXDIG, ALPHA and DQUOTE are the RFC 5234 core rules.
+;
+; ============================ LEXICAL NOTE ============================
+; ABNF CANNOT EXPRESS THE FIELD SEPARATOR RULE, AND THIS GRAMMAR DOES NOT
+; TRY TO. In a record line, the sequence " : " (SP COLON SP) is a field
+; separator ONLY where brace depth is 0, bracket depth is 0, and no quoted
+; string is open. The production record-line below describes the SHAPE of
+; a record; it is not an algorithm for finding field boundaries.
+;
+; A conforming parser MUST implement the tokenizer of spec/iac-1.0.md §3.5
+; and MUST NOT split on a textual occurrence of " : " that appears inside
+; quoted text, inside {...}, or inside [...]. Because audio-name admits
+; SP and COLON as characters, record is deliberately ambiguous at the
+; ABNF level; only the tokenizer decides the split. The same rule applies to
+; the payload of a retired record (§5.4), which is a record in canonical form.
+;
+; The lexical note governs. Where this file and spec/iac-1.0.md differ,
+; the specification text is authoritative.
+; =====================================================================
+
+; ---------------------------------------------------------------------
+; File structure
+; ---------------------------------------------------------------------
+
+iac-file        = [ BOM ] [ version-marker line-end ] *body-line [ final-line ]
+
+body-line       = blank-line line-end
+                / retired line-end
+                / comment-line line-end
+                / directive-line line-end
+                / record-line line-end
+
+final-line      = blank-line
+                / retired
+                / comment-line
+                / directive-line
+                / record-line
+
+BOM             = %xEF %xBB %xBF
+
+; A parser MUST accept LF, CRLF and CR as line terminators (D10). The
+; canonical serializer emits LF only; examples in the specification use LF.
+line-end        = LF / CRLF / CR
+
+; Classification order for a line: version marker (line 1 only), retired
+; record, directive, comment, blank line, record line. A first line beginning
+; "#!iac" that does not match version-marker is a comment. A "#!iac" line after
+; line 1 is a comment and is ignored (a linter SHOULD report W006).
+
+; ---------------------------------------------------------------------
+; Version marker and directives
+; ---------------------------------------------------------------------
+
+version-marker  = %s"#!iac" SP major "." minor
+major           = 1*DIGIT
+minor           = 1*DIGIT
+
+directive-line  = "#@" directive-name SP directive-value
+directive-name  = 1*( ALPHA / DIGIT / "-" / "_" )
+directive-value = 1*( %x20-7E / UTF8-2 / UTF8-3 / UTF8-4 )
+; directive-value is the rest of the line after the single SP. A parser
+; ignores trailing SP and HTAB and MUST NOT reject an unknown directive
+; (W006).
+
+; ---------------------------------------------------------------------
+; Blank lines and comments
+; ---------------------------------------------------------------------
+
+blank-line      = *WSP
+
+comment-line    = "#" *comment-char
+comment-char    = %x00-09 / %x0B-0C / %x0E-7F / UTF8-2 / UTF8-3 / UTF8-4
+; comment-char admits everything except CR and LF. NUL is still E001 at the
+; file level. A bare "#" is a valid comment.
+
+; ---------------------------------------------------------------------
+; Record line
+; ---------------------------------------------------------------------
+
+record          = audio-name field-sep subtitle-set field-sep color
+                  [ field-sep type ]
+record-line     = record
+field-sep       = SP ":" SP
+
+; AudioName: 1–256 code points. The character class below admits every code
+; point except DQUOTE, "[", "]", "{", "}", CR and LF. The sequence " : "
+; is also forbidden, but ABNF cannot exclude a sequence from a character
+; class; §4.2 and the tokenizer rule above enforce it. Control characters
+; are not forbidden by 1.0 but SHOULD NOT be produced. A leading "#" is
+; impossible because such a line is classified as a comment.
+audio-name      = 1*256audio-name-char
+audio-name-char = %x00-09 / %x0B-0C / %x0E-21 / %x23-5A / %x5C
+                / %x5E-7A / %x7C / %x7E-7F
+                / UTF8-2 / UTF8-3 / UTF8-4
+
+; Subtitle set: one or more entries, COMMA-separated. The grammar shows the
+; canonical ", " separator; parsers MUST also accept COMMA followed by zero
+; or more SP and HTAB and report W004 (§3.6).
+subtitle-set    = "{" entry *( "," SP entry ) "}"
+entry           = text "|" time "-" time "|"
+
+; Text: DQUOTE-delimited, UTF-8, no unescaped DQUOTE. The only escapes are
+; \" and \\. Text MAY be empty. Forbidden control characters (E026) are
+; excluded by text-char: C0 controls except HTAB, and DEL. C1 controls are
+; not excluded by 1.0.
+text            = DQUOTE *( text-char / escape ) DQUOTE
+text-char       = %x09 / %x20-21 / %x23-5B / %x5D-7E
+                / UTF8-2 / UTF8-3 / UTF8-4
+escape          = %x5C ( DQUOTE / %x5C )
+
+; Time: exactly two digits per component. Ranges (HH 00-99, MM/SS 00-59,
+; CC 00-99) and StopTime > StartTime cannot be expressed in ABNF; see
+; spec/iac-1.0.md §6.2–§6.3.
+time            = 2DIGIT ":" 2DIGIT ":" 2DIGIT ":" 2DIGIT
+
+; Colour: exactly six hex digits; case-insensitive.
+color           = "[" "#" 6HEXDIG "]"
+
+; Type: one token, first character an ASCII letter. Matching against the
+; registry is case-insensitive; the canonical spelling is emitted.
+type            = ALPHA *( ALPHA / DIGIT / "-" / "_" )
+
+; Retired record: a line-scoped marker, not a directive (§5.4). The payload
+; is a record in canonical form. A parser MUST NOT treat the line as a record;
+; a linter SHOULD parse the payload and report W008 if it is not a valid record.
+; This production matches only a valid payload; a line beginning "#!cut " with
+; an invalid payload is comment-line at the ABNF level and is still W008 for a
+; linter.
+retired         = %s"#!cut " record
+
+; ---------------------------------------------------------------------
+; UTF-8 (RFC 3629)
+; ---------------------------------------------------------------------
+
+UTF8-2          = %xC2-DF UTF8-tail
+UTF8-3          = %xE0 %xA0-BF UTF8-tail
+                / %xE1-EC 2UTF8-tail
+                / %xED %x80-9F UTF8-tail
+                / %xEE-EF 2UTF8-tail
+UTF8-4          = %xF0 %x90-BF 2UTF8-tail
+                / %xF1-F3 3UTF8-tail
+                / %xF4 %x80-8F 2UTF8-tail
+UTF8-tail       = %x80-BF
+
+; ---------------------------------------------------------------------
+; What this grammar does not constrain
+; ---------------------------------------------------------------------
+; The following are normative but not expressible in ABNF; a conforming
+; parser enforces them in the order given by spec/iac-1.0.md §8.2:
+;
+;   * field count is 3 or 4 (E012);
+;   * AudioName uniqueness among live records, exact and case-sensitive (E015);
+;   * entry StartTime non-decreasing within a record (E019);
+;   * time component ranges (E017) and StopTime > StartTime (E018);
+;   * the D12 limits in spec/iac-1.0.md §9, including 8 MiB per file,
+;     64 KiB per line, 10 000 records, 4 096 entries, 4 096 code points
+;     per text, and 256 code points per AudioName (E025 in strict mode);
+;   * the control-character exclusion in field 1 and in text (E026);
+;   * the mapping from every failure to its diagnostic code (§8);
+;   * retired payloads are a linter concern (W008), not a parser error.
+;
+; Comments, directives, retired records and blank lines MAY appear anywhere.
+; A file MAY contain zero records.

@@ -1,0 +1,223 @@
+{
+  "suite": "iac-1.0",
+  "cases": [
+    {
+      "file": "invalid/bad-color.iac",
+      "expect": "error",
+      "codes": [
+        "E021"
+      ]
+    },
+    {
+      "file": "invalid/bad-escape.iac",
+      "expect": "error",
+      "codes": [
+        "E011"
+      ]
+    },
+    {
+      "file": "invalid/bad-time-shape.iac",
+      "expect": "error",
+      "codes": [
+        "E016"
+      ]
+    },
+    {
+      "file": "invalid/bad-type.iac",
+      "expect": "error",
+      "codes": [
+        "E023"
+      ]
+    },
+    {
+      "file": "invalid/duplicate-audio-name.iac",
+      "expect": "error",
+      "codes": [
+        "E015"
+      ]
+    },
+    {
+      "file": "invalid/empty-audio-name.iac",
+      "expect": "error",
+      "codes": [
+        "E013"
+      ]
+    },
+    {
+      "file": "invalid/empty-set.iac",
+      "expect": "error",
+      "codes": [
+        "E020"
+      ]
+    },
+    {
+      "file": "invalid/entry-order.iac",
+      "expect": "error",
+      "codes": [
+        "E019"
+      ]
+    },
+    {
+      "file": "invalid/field-count.iac",
+      "expect": "error",
+      "codes": [
+        "E012"
+      ]
+    },
+    {
+      "file": "invalid/forbidden-control.iac",
+      "expect": "error",
+      "codes": [
+        "E026"
+      ]
+    },
+    {
+      "file": "invalid/illegal-audio-name.iac",
+      "expect": "error",
+      "codes": [
+        "E014"
+      ]
+    },
+    {
+      "file": "invalid/too-many-fields.iac",
+      "expect": "error",
+      "codes": [
+        "E012"
+      ]
+    },
+    {
+      "file": "invalid/stop-not-after-start.iac",
+      "expect": "error",
+      "codes": [
+        "E018"
+      ]
+    },
+    {
+      "file": "invalid/time-range.iac",
+      "expect": "error",
+      "codes": [
+        "E017"
+      ]
+    },
+    {
+      "file": "invalid/trailing-content.iac",
+      "expect": "error",
+      "codes": [
+        "E027"
+      ]
+    },
+    {
+      "file": "invalid/unsupported-major.iac",
+      "expect": "error",
+      "codes": [
+        "E024"
+      ]
+    },
+    {
+      "file": "invalid/unterminated-quote.iac",
+      "expect": "error",
+      "codes": [
+        "E010"
+      ]
+    },
+    {
+      "file": "invalid/retired-broken.iac",
+      "expect": "warning",
+      "codes": [
+        "W008"
+      ]
+    },
+    {
+      "file": "valid/bom.iac",
+      "expect": "warning",
+      "codes": [
+        "W001"
+      ]
+    },
+    {
+      "file": "valid/colon-in-text.iac",
+      "expect": "ok",
+      "codes": []
+    },
+    {
+      "file": "valid/comments-blank.iac",
+      "expect": "ok",
+      "codes": []
+    },
+    {
+      "file": "valid/crlf.iac",
+      "expect": "ok",
+      "codes": []
+    },
+    {
+      "file": "valid/escapes.iac",
+      "expect": "ok",
+      "codes": []
+    },
+    {
+      "file": "valid/minimal.iac",
+      "expect": "ok",
+      "codes": []
+    },
+    {
+      "file": "valid/newer-minor.iac",
+      "expect": "warning",
+      "codes": [
+        "W007"
+      ]
+    },
+    {
+      "file": "valid/no-trailing-newline.iac",
+      "expect": "warning",
+      "codes": [
+        "W003"
+      ]
+    },
+    {
+      "file": "valid/overlap.iac",
+      "expect": "warning",
+      "codes": [
+        "W002"
+      ]
+    },
+    {
+      "file": "valid/retired.iac",
+      "expect": "ok",
+      "codes": []
+    },
+    {
+      "file": "valid/retired-duplicate.iac",
+      "expect": "ok",
+      "codes": []
+    },
+    {
+      "file": "valid/touching.iac",
+      "expect": "ok",
+      "codes": []
+    },
+    {
+      "file": "valid/types.iac",
+      "expect": "ok",
+      "codes": []
+    },
+    {
+      "file": "valid/unknown-directive.iac",
+      "expect": "warning",
+      "codes": [
+        "W006"
+      ]
+    },
+    {
+      "file": "valid/unknown-type.iac",
+      "expect": "warning",
+      "codes": [
+        "W005"
+      ]
+    },
+    {
+      "file": "valid/versioned.iac",
+      "expect": "ok",
+      "codes": []
+    }
+  ]
+}

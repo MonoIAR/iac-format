@@ -1,0 +1,3 @@
+VO_1 : {"Kept line."|00:00:00:00-00:00:02:00|} : [#FFFFFF]
+#!cut VO_2 : {"Deleted line."|00:00:02:00-00:00:04:00|} : [#FFFFFF]
+#!cut music_old : {"Old lyric."|00:00:04:00-00:00:06:00|} : [#FFFFFF] : Music
